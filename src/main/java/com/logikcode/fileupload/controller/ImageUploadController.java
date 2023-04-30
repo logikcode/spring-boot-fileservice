@@ -1,6 +1,7 @@
 package com.logikcode.fileupload.controller;
 
 import com.logikcode.fileupload.dto.FileUploadResponse;
+import com.logikcode.fileupload.exception.TooManyFilesException;
 import com.logikcode.fileupload.service.StorageService;
 import com.logikcode.fileupload.util.FileUploadUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,14 +16,14 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 import java.util.zip.DataFormatException;
 
@@ -120,10 +121,7 @@ public class ImageUploadController {
     @PostMapping("/upload")
     public FileUploadResponse uploadFileToSystem(@RequestParam("file") MultipartFile file){
         String fileName = storageService.storeFileToFileSystem(file);
-        String url = ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("api/v1/file/download/")
-                .path(fileName)
-                .toUriString();
+        String url = FileUploadUtil.buildDownloadUrl(fileName);
         String fileType = file.getContentType();
         FileUploadResponse response = new FileUploadResponse();
         response.setFileName(fileName);
@@ -137,18 +135,41 @@ public class ImageUploadController {
        Resource resource = storageService.downloadImageFromFileSystem(fileName);
         String mimeType ;
         try {
+            //dynamic retrieval of mediatype
            mimeType = servletRequest.getServletContext().getMimeType(resource.getFile().getAbsolutePath());
 
        } catch (Exception ex){
             mimeType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
         }
        //MediaType contentType = MediaType.IMAGE_JPEG;
-        MediaType contentType = MediaType.parseMediaType(mimeType);
+        MediaType contentType = MediaType.parseMediaType(mimeType); //
 
        return ResponseEntity.ok()
                .contentType(contentType)
                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; fileName="+resource.getFilename())
                .body(resource);
-
     }
+
+    @PostMapping("/upload/multiple")
+    public List<FileUploadResponse> handleMultipleFilesUploads(@RequestParam("files") MultipartFile[] files){
+        List<FileUploadResponse> responseList = new ArrayList<>();
+        if (files.length > 10){
+            throw new TooManyFilesException("Files size exceeded");
+        }
+        Arrays.stream(files).toList().forEach(file ->{
+            String fileName = storageService.storeFileToFileSystem(file);
+            String url = FileUploadUtil.buildDownloadUrl(fileName);
+            String fileType = file.getContentType();
+
+            FileUploadResponse response = new FileUploadResponse();
+            response.setFileName(fileName);
+            response.setFileType(fileType);
+            response.setFileUrl(url);
+
+            responseList.add(response);
+        });
+        return responseList;
+    }
+
+
 }

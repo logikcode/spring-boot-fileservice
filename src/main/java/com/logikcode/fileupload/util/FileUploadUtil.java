@@ -2,6 +2,7 @@ package com.logikcode.fileupload.util;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,7 +33,13 @@ public class FileUploadUtil {
         }catch (IOException io){
             log.info("EXCEPTION READING FILE INPUT STREAM");
         }
+    }
 
-
+    public static String buildDownloadUrl(String fileName){
+        String url = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("api/v1/file/download/")
+                .path(fileName)
+                .toUriString();
+        return url;
     }
 }
