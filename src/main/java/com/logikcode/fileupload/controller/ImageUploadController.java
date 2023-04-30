@@ -5,6 +5,7 @@ import com.logikcode.fileupload.exception.TooManyFilesException;
 import com.logikcode.fileupload.service.StorageService;
 import com.logikcode.fileupload.util.FileUploadUtil;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
@@ -12,6 +13,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StreamUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -21,11 +23,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.zip.DataFormatException;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @RestController
 @RequiredArgsConstructor
@@ -170,6 +171,31 @@ public class ImageUploadController {
         });
         return responseList;
     }
+    //downloading zip file
+    @GetMapping("zipDownload")
+    public void zipDownload(@RequestParam("fileName") String[] files, HttpServletResponse response){
 
+        ZipOutputStream zipOutputStream;
+        try{
+            zipOutputStream = new ZipOutputStream(response.getOutputStream());
+            Arrays.stream(files).forEach(file->{
+                Resource resource = storageService.downloadImageFromFileSystem(file);
+                ZipEntry zipEntry = new ZipEntry(Objects.requireNonNull(resource.getFilename()));
+                try {
+                    zipEntry.setSize(resource.contentLength());
+                    zipOutputStream.putNextEntry(zipEntry);
+                    StreamUtils.copy(resource.getInputStream(), zipOutputStream);
 
+                } catch (IOException e) {
+
+                    throw new RuntimeException(e.getMessage());
+                }
+            });
+
+        } catch (IOException ioException){
+            log.info("EXCEPTION ZIPPING");
+        }
+        response.setStatus(200);
+        response.addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; fileName=zipfile");
+    }
 }

@@ -87,6 +87,7 @@ public class StorageService {
             throw new RuntimeException(e);
         }
         if (resource.exists() && resource.isReadable()){
+            log.info("RESOURCE OBJECT ... -> {}", resource);
             return resource;
         } else {
             throw new RuntimeException("The File does not exist or is not readable");
