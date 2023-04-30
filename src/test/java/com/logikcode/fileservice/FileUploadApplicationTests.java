@@ -1,4 +1,4 @@
-package com.logikcode.fileupload;
+package com.logikcode.fileservice;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

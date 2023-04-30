@@ -1,4 +1,4 @@
-package com.logikcode.fileupload.exception;
+package com.logikcode.fileservice.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

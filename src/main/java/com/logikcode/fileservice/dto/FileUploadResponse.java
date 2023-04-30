@@ -1,4 +1,4 @@
-package com.logikcode.fileupload.dto;
+package com.logikcode.fileservice.dto;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;

@@ -1,9 +1,9 @@
-package com.logikcode.fileupload.controller;
+package com.logikcode.fileservice.controller;
 
-import com.logikcode.fileupload.dto.FileUploadResponse;
-import com.logikcode.fileupload.exception.TooManyFilesException;
-import com.logikcode.fileupload.service.StorageService;
-import com.logikcode.fileupload.util.FileUploadUtil;
+import com.logikcode.fileservice.dto.FileUploadResponse;
+import com.logikcode.fileservice.exception.TooManyFilesException;
+import com.logikcode.fileservice.service.StorageService;
+import com.logikcode.fileservice.util.FileUploadUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +32,7 @@ import java.util.zip.ZipOutputStream;
 @RequiredArgsConstructor
 @Slf4j
 @RequestMapping(value = "/api/v1/file")
-public class ImageUploadController {
+public class FileHandlingToFileSystemController {
     private final StorageService storageService;
     @PostMapping("/upload111")
     public ResponseEntity<?> uploadImage(@RequestParam("image")MultipartFile file) throws IOException {
@@ -175,9 +175,9 @@ public class ImageUploadController {
     @GetMapping("zipDownload")
     public void zipDownload(@RequestParam("fileName") String[] files, HttpServletResponse response){
 
-        ZipOutputStream zipOutputStream;
+       // ZipOutputStream zipOutputStream;
         try{
-            zipOutputStream = new ZipOutputStream(response.getOutputStream());
+            ZipOutputStream   zipOutputStream = new ZipOutputStream(response.getOutputStream());
             Arrays.stream(files).forEach(file->{
                 Resource resource = storageService.downloadImageFromFileSystem(file);
                 ZipEntry zipEntry = new ZipEntry(Objects.requireNonNull(resource.getFilename()));
@@ -187,13 +187,16 @@ public class ImageUploadController {
                     StreamUtils.copy(resource.getInputStream(), zipOutputStream);
 
                 } catch (IOException e) {
-
                     throw new RuntimeException(e.getMessage());
                 }
+
             });
+            zipOutputStream.finish();
+            zipOutputStream.close();
 
         } catch (IOException ioException){
             log.info("EXCEPTION ZIPPING");
+
         }
         response.setStatus(200);
         response.addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; fileName=zipfile");

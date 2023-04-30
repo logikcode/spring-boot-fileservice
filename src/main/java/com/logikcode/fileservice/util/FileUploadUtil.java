@@ -1,4 +1,4 @@
-package com.logikcode.fileupload.util;
+package com.logikcode.fileservice.util;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.multipart.MultipartFile;

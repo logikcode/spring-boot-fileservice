@@ -1,4 +1,4 @@
-package com.logikcode.fileupload.util;
+package com.logikcode.fileservice.util;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

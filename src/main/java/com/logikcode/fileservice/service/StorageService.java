@@ -1,12 +1,10 @@
-package com.logikcode.fileupload.service;
+package com.logikcode.fileservice.service;
 
-import com.logikcode.fileupload.entity.ImageFile;
-import com.logikcode.fileupload.repository.FileRepository;
-import com.logikcode.fileupload.util.ImageUtil;
-import lombok.NoArgsConstructor;
+import com.logikcode.fileservice.entity.ImageFile;
+import com.logikcode.fileservice.repository.ImageRepository;
+import com.logikcode.fileservice.util.ImageUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.system.SystemProperties;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
@@ -28,11 +26,11 @@ import java.util.zip.DataFormatException;
 
 @Slf4j
 public class StorageService {
-    private FileRepository fileRepository;
+    private ImageRepository fileRepository;
     private Path fileStoragePath;
     @Value("${file.storage.location:files}")
     private String fileStorageLocation = "./files";
-    public StorageService(FileRepository fileRepository){
+    public StorageService(ImageRepository fileRepository){
         this.fileRepository = fileRepository;
     }
 

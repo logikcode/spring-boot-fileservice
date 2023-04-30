@@ -1,4 +1,4 @@
-package com.logikcode.fileupload.entity;
+package com.logikcode.fileservice.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
