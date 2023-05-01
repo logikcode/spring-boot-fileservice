@@ -1,41 +1,60 @@
 package com.logikcode.fileservice.service;
 
+import com.logikcode.fileservice.dto.FileUploadResponse;
+import com.logikcode.fileservice.dto.ProductDto;
 import com.logikcode.fileservice.entity.ImageFile;
+import com.logikcode.fileservice.exception.TooManyFilesException;
+import com.logikcode.fileservice.model.Product;
 import com.logikcode.fileservice.repository.ImageRepository;
+import com.logikcode.fileservice.repository.ProductRepository;
 import com.logikcode.fileservice.util.ImageUtil;
+import com.logikcode.fileservice.util.UrlUtil;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
+import java.util.stream.Stream;
 import java.util.zip.DataFormatException;
 
 @Service
 //@RequiredArgsConstructor
-
+@Getter
 @Slf4j
 public class StorageService {
     private ImageRepository fileRepository;
+    @Autowired
+    private  ProductRepository productRepository;
     private Path fileStoragePath;
     @Value("${file.storage.location:files}")
-    private String fileStorageLocation = "./files";
-    public StorageService(ImageRepository fileRepository){
+    private String fileStorageLocation = "./files/";
+    private final String UPLOAD_DIR = "./product-image/";
+    public StorageService(ImageRepository fileRepository, ProductRepository productRepository){
         this.fileRepository = fileRepository;
+        this.productRepository = productRepository;
     }
 
     public StorageService(){
-    fileStoragePath = Paths.get(fileStorageLocation).toAbsolutePath().normalize();
+        fileStoragePath = Paths.get(fileStorageLocation).toAbsolutePath().normalize();
     log.info("FILE STORAGE PATH {}", fileStoragePath);
 
     try {
@@ -62,11 +81,23 @@ public class StorageService {
         return image;
     }
 
-    public String storeFileToFileSystem(MultipartFile multipartFile){
+    public String storeFileToFileSystem(MultipartFile multipartFile, ProductDto productDto){
+
+        Product product = new Product();
+        product.setId(product.getId());
+        product.setName(productDto.getName());
+        product.setPrice(productDto.getPrice());
+
+        String uploadDir = "./product-image/" + productDto.getId();
        String fileName = StringUtils.cleanPath(Objects.requireNonNull(multipartFile.getOriginalFilename()));
-       log.info("CLEANSE FILE NAME -> {}", fileName);
-       Path filePath = Paths.get(fileStoragePath + "/" +fileName);
-       log.info("PATH NAME AND FILE NAME -> {}",filePath);
+        Path filePath = Paths.get(fileStorageLocation  + productDto.getId());
+
+      Path productImageUrl =  saveFileToProductDirectory(uploadDir, multipartFile, fileName);
+        product.setProductImageUrl(productImageUrl);
+        productRepository.save(product);
+
+        //Path filePath = Paths.get(fileStoragePath + "/" +fileName);
+
         try {
             Files.copy(multipartFile.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
@@ -75,6 +106,82 @@ public class StorageService {
         return fileName;
     }
 
+    public List<FileUploadResponse> handleMultipleFileSaveToFileSystem(MultipartFile[] files, ProductDto productDto,
+                                                                       HttpServletRequest servletRequest){
+        List<FileUploadResponse> responseList = new ArrayList<>();
+        long SUBDIR = productDto.getId();
+
+        if (files.length > 10){
+            throw new TooManyFilesException("Files size exceeded");
+        }
+        String requestUrl = UrlUtil.getSiteUriPath(servletRequest);
+        String normalizedUrl = UrlUtil.normalizedUrl(requestUrl,0,(requestUrl.indexOf("u")) - 1);
+
+        log.info("REQUEST URL -> {}", requestUrl);
+        log.info("NORMALIZED URL -> {} ", normalizedUrl);
+
+        Arrays.stream(files).toList().forEach(file ->{
+            //String fileName = storageService.storeFileToFileSystem(file);
+
+           String fileName = StringUtils.cleanPath(file.getOriginalFilename());
+            String url = UrlUtil.buildDownloadUrl(normalizedUrl,fileName,"download/");
+            String fileType = file.getContentType();
+
+            saveFileToProductDirectory(UPLOAD_DIR+SUBDIR, file, fileName);
+
+
+            FileUploadResponse response = new FileUploadResponse();
+            response.setFileName(fileName);
+            response.setFileType(fileType);
+            response.setFileUrl(url);
+
+            responseList.add(response);
+        });
+        return responseList;
+    }
+
+    private Path saveFileToProductDirectory(String uploadDir, MultipartFile file, String fileName){
+        Path uploadPath = Paths.get(uploadDir);
+        if (!Files.exists(uploadPath)){
+            try {
+
+                Files.createDirectories(uploadPath);
+            } catch (IOException ioException){
+                log.info("Exception Encountered While Creating Directory ");
+            }
+        }
+        // read input stream from file
+        try (  InputStream fileStream = file.getInputStream()){
+            Path filePath = uploadPath.resolve(fileName);
+            log.info("UPLOAD PATH -> {} ", uploadDir);
+            log.info("FILE PATH -> {} ", filePath);
+            Files.copy(fileStream,filePath, StandardCopyOption.REPLACE_EXISTING);
+
+        }catch (IOException io){
+            log.info("EXCEPTION READING FILE INPUT STREAM");
+        }
+        return uploadPath;
+    }
+
+    public String storeFileToFileSystem(MultipartFile multipartFile){
+
+//        Product product = new Product();
+//        product.setId(product.getId());
+//        product.setName(productDto.getName());
+//        product.setPrice(productDto.getPrice());
+
+
+        String fileName = StringUtils.cleanPath(Objects.requireNonNull(multipartFile.getOriginalFilename()));
+        log.info("CLEANSE FILE NAME -> {}", fileName);
+        Path filePath = Paths.get(fileStoragePath + "/" +fileName);
+        log.info("PATH NAME AND FILE NAME -> {}",filePath);
+        try {
+            Files.copy(multipartFile.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new RuntimeException(e.getMessage());
+        }
+        return fileName;
+    }
 
     public Resource downloadImageFromFileSystem(String fileName) {
       Path path = Paths.get(fileStorageLocation).toAbsolutePath().resolve(fileName);
@@ -91,5 +198,33 @@ public class StorageService {
             throw new RuntimeException("The File does not exist or is not readable");
 
         }
+    }
+
+    public void getAllProductFilesInDirectory(String directory, long productId){
+    Path productDirectory = Paths.get(directory + productId);
+         List<Path> allProductFiles = getAllImages(productDirectory);
+         for(Path productFile : allProductFiles){
+             log.info("PRODUCT FILE -> {}", productFile.getFileName());
+         }
+
+    }
+
+    private List<Path> getAllImages(Path productDirectory){
+        Stream<Path> filesStream = null;
+        List<Path> productFiles;
+        try {
+            filesStream = Files.list(productDirectory);
+        } catch (IOException ex){
+            log.info("EXCEPTION WHILE TRANSFORMING THE PRODUCT DIRECTORY TO STREAMS");
+        }
+        assert filesStream != null;
+        productFiles = filesStream.filter(Files::isRegularFile)
+                .filter(file -> file.toString().toLowerCase().endsWith(".jpg")
+                        || file.toString().toLowerCase().endsWith(".jpeg")
+                        || file.toString().toLowerCase().endsWith(".png")
+                        || file.toString().toLowerCase().endsWith(".gif")
+                ).toList();
+
+        return productFiles;
     }
 }

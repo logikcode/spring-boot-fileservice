@@ -1,5 +1,6 @@
 package com.logikcode.fileservice.util;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -35,11 +36,8 @@ public class FileUploadUtil {
         }
     }
 
-    public static String buildDownloadUrl(String fileName){
-        String url = ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("api/v1/file/download/")
-                .path(fileName)
-                .toUriString();
-        return url;
-    }
+
+
+
+
 }

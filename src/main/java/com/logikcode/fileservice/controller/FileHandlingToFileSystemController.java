@@ -1,13 +1,17 @@
 package com.logikcode.fileservice.controller;
 
 import com.logikcode.fileservice.dto.FileUploadResponse;
+import com.logikcode.fileservice.dto.ProductDto;
 import com.logikcode.fileservice.exception.TooManyFilesException;
+import com.logikcode.fileservice.model.Product;
 import com.logikcode.fileservice.service.StorageService;
 import com.logikcode.fileservice.util.FileUploadUtil;
+import com.logikcode.fileservice.util.UrlUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -34,6 +38,8 @@ import java.util.zip.ZipOutputStream;
 @RequestMapping(value = "/api/v1/file")
 public class FileHandlingToFileSystemController {
     private final StorageService storageService;
+    @Value("${file.storage.location:files}")
+    private String fileStorageLocation = "./files";
     @PostMapping("/upload111")
     public ResponseEntity<?> uploadImage(@RequestParam("image")MultipartFile file) throws IOException {
         return ResponseEntity.status(HttpStatus.OK).body(storageService.handleFileUpload(file));
@@ -74,10 +80,10 @@ public class FileHandlingToFileSystemController {
     @PostMapping("/upload/v3")
     public void fileUploadHandler(@RequestParam("file") MultipartFile file){
         String fileName = file.getOriginalFilename();
-        String normalizedFile = StringUtils.cleanPath(fileName);
+        String normalizedFileName = StringUtils.cleanPath(fileName);
 
         String uploadDir = "./product-image/" + UUID.randomUUID().toString().substring(0, 10);
-        FileUploadUtil.saveFile(uploadDir, file, normalizedFile);
+        FileUploadUtil.saveFile(uploadDir, file, normalizedFileName);
 
     }
 
@@ -120,20 +126,39 @@ public class FileHandlingToFileSystemController {
     }
 
     @PostMapping("/upload")
-    public FileUploadResponse uploadFileToSystem(@RequestParam("file") MultipartFile file){
-        String fileName = storageService.storeFileToFileSystem(file);
-        String url = FileUploadUtil.buildDownloadUrl(fileName);
+    public ResponseEntity<?> uploadFileToSystem(@RequestParam("file") MultipartFile file,
+                                                 @ModelAttribute ProductDto productDto,
+                                                 HttpServletRequest request){
+
+        String contentType = request.getContentType();
+        if (contentType == null || !contentType.startsWith("multipart/form-data")) {
+            return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body("Unsupported Media Type");
+        }
+
+
+
+        String fileName = storageService.storeFileToFileSystem(file, productDto);
+
+        String requestUrl = UrlUtil.getSiteUriPath(request);
+        String normalizedUrl = UrlUtil.normalizedUrl(requestUrl,0,requestUrl.lastIndexOf("/"));
+
+
+        String url = UrlUtil.buildDownloadUrl(normalizedUrl,fileName, "download/");
         String fileType = file.getContentType();
         FileUploadResponse response = new FileUploadResponse();
         response.setFileName(fileName);
         response.setFileType(fileType);
         response.setFileUrl(url);
-        return response;
+        return ResponseEntity.ok().body(response);
     }
 
     @GetMapping("/download/{fileName}")
-    public ResponseEntity<Resource> downloadFileFromSystem(@PathVariable("fileName") String fileName, HttpServletRequest servletRequest){
-       Resource resource = storageService.downloadImageFromFileSystem(fileName);
+    public ResponseEntity<Resource> downloadFileFromSystem(@PathVariable("fileName") String fileName, HttpServletRequest servletRequest) throws IOException {
+
+        Path path = Paths.get(fileStorageLocation).toAbsolutePath().resolve(fileName);
+
+
+        Resource resource = storageService.downloadImageFromFileSystem(fileName);
         String mimeType ;
         try {
             //dynamic retrieval of mediatype
@@ -142,34 +167,29 @@ public class FileHandlingToFileSystemController {
        } catch (Exception ex){
             mimeType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
         }
-       //MediaType contentType = MediaType.IMAGE_JPEG;
+        if (mimeType == null){
+            mimeType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        }
+        log.info("MIMETYPE "+mimeType);
         MediaType contentType = MediaType.parseMediaType(mimeType); //
-
+        log.info("CONTENT-TYPE "+ contentType);
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("file-name", fileName);
+        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; File-Name="+resource.getFilename());
+        //MediaType.parseMediaType(Files.probeContentType(path))
        return ResponseEntity.ok()
-               .contentType(contentType)
-               .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; fileName="+resource.getFilename())
+               .contentType( contentType)
+               .headers(headers)
                .body(resource);
     }
 
     @PostMapping("/upload/multiple")
-    public List<FileUploadResponse> handleMultipleFilesUploads(@RequestParam("files") MultipartFile[] files){
-        List<FileUploadResponse> responseList = new ArrayList<>();
-        if (files.length > 10){
-            throw new TooManyFilesException("Files size exceeded");
-        }
-        Arrays.stream(files).toList().forEach(file ->{
-            String fileName = storageService.storeFileToFileSystem(file);
-            String url = FileUploadUtil.buildDownloadUrl(fileName);
-            String fileType = file.getContentType();
-
-            FileUploadResponse response = new FileUploadResponse();
-            response.setFileName(fileName);
-            response.setFileType(fileType);
-            response.setFileUrl(url);
-
-            responseList.add(response);
-        });
-        return responseList;
+    public ResponseEntity<List<FileUploadResponse>> handleMultipleFilesUploads(@RequestParam("files") MultipartFile[] files,
+                                                              @ModelAttribute ProductDto productDto, HttpServletRequest request){
+        List<FileUploadResponse> responseList =  storageService.handleMultipleFileSaveToFileSystem(files, productDto, request);
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(responseList);
     }
     //downloading zip file
     @GetMapping("zipDownload")
@@ -200,5 +220,12 @@ public class FileHandlingToFileSystemController {
         }
         response.setStatus(200);
         response.addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; fileName=zipfile");
+    }
+
+    @GetMapping("/download/all/{productId}")
+    public ResponseEntity<?> retrieveAllFiles(@PathVariable("productId") long id){
+       String uploadDir = storageService.getUPLOAD_DIR();
+        storageService.getAllProductFilesInDirectory(uploadDir, id);
+        return null;
     }
 }
