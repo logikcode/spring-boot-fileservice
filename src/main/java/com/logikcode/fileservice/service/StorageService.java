@@ -1,5 +1,6 @@
 package com.logikcode.fileservice.service;
 
+import com.logikcode.fileservice.dto.FileDownloadResponse;
 import com.logikcode.fileservice.dto.FileUploadResponse;
 import com.logikcode.fileservice.dto.ProductDto;
 import com.logikcode.fileservice.entity.ImageFile;
@@ -12,16 +13,16 @@ import com.logikcode.fileservice.util.UrlUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
@@ -45,16 +46,15 @@ public class StorageService {
     @Autowired
     private  ProductRepository productRepository;
     private Path fileStoragePath;
-    @Value("${file.storage.location:files}")
-    private String fileStorageLocation = "./files/";
-    private final String UPLOAD_DIR = "./product-image/";
+    @Value("${file.storage.location:./src/main/product-files/")
+    private static final String UPLOAD_DIR = "./src/main/product-files/";
     public StorageService(ImageRepository fileRepository, ProductRepository productRepository){
         this.fileRepository = fileRepository;
         this.productRepository = productRepository;
     }
 
     public StorageService(){
-        fileStoragePath = Paths.get(fileStorageLocation).toAbsolutePath().normalize();
+        fileStoragePath = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
     log.info("FILE STORAGE PATH {}", fileStoragePath);
 
     try {
@@ -84,15 +84,14 @@ public class StorageService {
     public String storeFileToFileSystem(MultipartFile multipartFile, ProductDto productDto){
 
         Product product = new Product();
-        product.setId(product.getId());
-        product.setName(productDto.getName());
-        product.setPrice(productDto.getPrice());
+        BeanUtils.copyProperties(productDto, product);
+        Product savedProduct = productRepository.save(product);
 
-        String uploadDir = "./product-image/" + productDto.getId();
-       String fileName = StringUtils.cleanPath(Objects.requireNonNull(multipartFile.getOriginalFilename()));
-        Path filePath = Paths.get(fileStorageLocation  + productDto.getId());
+        String uploadDir = UPLOAD_DIR + savedProduct.getName();
+        String fileName = StringUtils.cleanPath(Objects.requireNonNull(multipartFile.getOriginalFilename()));
+        Path filePath = Paths.get(UPLOAD_DIR  + savedProduct.getName());
 
-      Path productImageUrl =  saveFileToProductDirectory(uploadDir, multipartFile, fileName);
+        Path productImageUrl =  saveFileToProductDirectory(uploadDir, multipartFile, fileName);
         product.setProductImageUrl(productImageUrl);
         productRepository.save(product);
 
@@ -108,8 +107,13 @@ public class StorageService {
 
     public List<FileUploadResponse> handleMultipleFileSaveToFileSystem(MultipartFile[] files, ProductDto productDto,
                                                                        HttpServletRequest servletRequest){
+        //TODO - abstract product creation away
+        Product product = new Product();
+        BeanUtils.copyProperties(productDto,product);
+        Product savedProduct = productRepository.save(product);
+
         List<FileUploadResponse> responseList = new ArrayList<>();
-        long SUBDIR = productDto.getId();
+        String SUBDIR = String.valueOf(savedProduct.getName());
 
         if (files.length > 10){
             throw new TooManyFilesException("Files size exceeded");
@@ -128,7 +132,6 @@ public class StorageService {
             String fileType = file.getContentType();
 
             saveFileToProductDirectory(UPLOAD_DIR+SUBDIR, file, fileName);
-
 
             FileUploadResponse response = new FileUploadResponse();
             response.setFileName(fileName);
@@ -183,11 +186,15 @@ public class StorageService {
         return fileName;
     }
 
-    public Resource downloadImageFromFileSystem(String fileName) {
-      Path path = Paths.get(fileStorageLocation).toAbsolutePath().resolve(fileName);
+    public Resource downloadImageFromFileSystem(String fileName, long productId) {
+        String SUBDIR = String.valueOf(productId);
+      Path path = Paths.get(UPLOAD_DIR).toAbsolutePath().resolve(fileName);
+      Path dir = Paths.get(UPLOAD_DIR + SUBDIR).toAbsolutePath().resolve(fileName).normalize();
         Resource resource;
         try {
-             resource = new UrlResource(path.toUri());
+            // resource = new UrlResource(path.toUri());
+             resource = new UrlResource(dir.toUri());
+
         } catch (MalformedURLException e) {
             throw new RuntimeException(e);
         }
@@ -200,12 +207,18 @@ public class StorageService {
         }
     }
 
-    public void getAllProductFilesInDirectory(String directory, long productId){
-    Path productDirectory = Paths.get(directory + productId);
+    public FileDownloadResponse getAllProductFilesInDirectory(String directory, Product product){
+    Path productDirectory = Paths.get(directory + product.getName());
          List<Path> allProductFiles = getAllImages(productDirectory);
-         for(Path productFile : allProductFiles){
-             log.info("PRODUCT FILE -> {}", productFile.getFileName());
-         }
+
+         FileDownloadResponse fileUploadResponse = FileDownloadResponse
+                 .builder()
+                 .productId(product.getId())
+                 .productName(product.getName())
+                 .productFiles(allProductFiles)
+                 .build();
+
+         return fileUploadResponse;
 
     }
 
@@ -223,8 +236,12 @@ public class StorageService {
                         || file.toString().toLowerCase().endsWith(".jpeg")
                         || file.toString().toLowerCase().endsWith(".png")
                         || file.toString().toLowerCase().endsWith(".gif")
-                ).toList();
+                ).map(Path::normalize).toList();
 
         return productFiles;
+    }
+
+    public String getUPLOAD_DIR() {
+        return UPLOAD_DIR;
     }
 }

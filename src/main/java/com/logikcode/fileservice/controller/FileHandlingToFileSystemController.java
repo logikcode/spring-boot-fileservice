@@ -1,9 +1,11 @@
 package com.logikcode.fileservice.controller;
 
+import com.logikcode.fileservice.dto.FileDownloadResponse;
 import com.logikcode.fileservice.dto.FileUploadResponse;
 import com.logikcode.fileservice.dto.ProductDto;
 import com.logikcode.fileservice.exception.TooManyFilesException;
 import com.logikcode.fileservice.model.Product;
+import com.logikcode.fileservice.repository.ProductRepository;
 import com.logikcode.fileservice.service.StorageService;
 import com.logikcode.fileservice.util.FileUploadUtil;
 import com.logikcode.fileservice.util.UrlUtil;
@@ -38,8 +40,10 @@ import java.util.zip.ZipOutputStream;
 @RequestMapping(value = "/api/v1/file")
 public class FileHandlingToFileSystemController {
     private final StorageService storageService;
+    private final ProductRepository productRepository;
     @Value("${file.storage.location:files}")
     private String fileStorageLocation = "./files";
+    private final String UPLOAD_DIR = "./product-image/";
     @PostMapping("/upload111")
     public ResponseEntity<?> uploadImage(@RequestParam("image")MultipartFile file) throws IOException {
         return ResponseEntity.status(HttpStatus.OK).body(storageService.handleFileUpload(file));
@@ -136,7 +140,6 @@ public class FileHandlingToFileSystemController {
         }
 
 
-
         String fileName = storageService.storeFileToFileSystem(file, productDto);
 
         String requestUrl = UrlUtil.getSiteUriPath(request);
@@ -153,12 +156,10 @@ public class FileHandlingToFileSystemController {
     }
 
     @GetMapping("/download/{fileName}")
-    public ResponseEntity<Resource> downloadFileFromSystem(@PathVariable("fileName") String fileName, HttpServletRequest servletRequest) throws IOException {
+    public ResponseEntity<Resource> downloadFileFromSystem(@PathVariable("fileName") String fileName, @RequestParam("productId") long productId, HttpServletRequest servletRequest) throws IOException {
+        Product product = productRepository.findById(productId).orElseThrow();
 
-        Path path = Paths.get(fileStorageLocation).toAbsolutePath().resolve(fileName);
-
-
-        Resource resource = storageService.downloadImageFromFileSystem(fileName);
+        Resource resource = storageService.downloadImageFromFileSystem(fileName, product.getId());
         String mimeType ;
         try {
             //dynamic retrieval of mediatype
@@ -173,9 +174,10 @@ public class FileHandlingToFileSystemController {
         log.info("MIMETYPE "+mimeType);
         MediaType contentType = MediaType.parseMediaType(mimeType); //
         log.info("CONTENT-TYPE "+ contentType);
+        log.info("RESOURCE IN CONTROLLER LAYER -{} ", resource);
         HttpHeaders headers = new HttpHeaders();
         headers.add("file-name", fileName);
-        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; File-Name="+resource.getFilename());
+        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment;File-Name="+resource.getFilename());
         //MediaType.parseMediaType(Files.probeContentType(path))
        return ResponseEntity.ok()
                .contentType( contentType)
@@ -192,14 +194,14 @@ public class FileHandlingToFileSystemController {
                 .body(responseList);
     }
     //downloading zip file
-    @GetMapping("zipDownload")
-    public void zipDownload(@RequestParam("fileName") String[] files, HttpServletResponse response){
+    @GetMapping("zipDownload/{productId}")
+    public void zipDownload(@RequestParam("fileName") String[] files,long productId, HttpServletResponse response){
 
        // ZipOutputStream zipOutputStream;
         try{
             ZipOutputStream   zipOutputStream = new ZipOutputStream(response.getOutputStream());
             Arrays.stream(files).forEach(file->{
-                Resource resource = storageService.downloadImageFromFileSystem(file);
+                Resource resource = storageService.downloadImageFromFileSystem(file, productId);
                 ZipEntry zipEntry = new ZipEntry(Objects.requireNonNull(resource.getFilename()));
                 try {
                     zipEntry.setSize(resource.contentLength());
@@ -223,9 +225,10 @@ public class FileHandlingToFileSystemController {
     }
 
     @GetMapping("/download/all/{productId}")
-    public ResponseEntity<?> retrieveAllFiles(@PathVariable("productId") long id){
+    public ResponseEntity<FileDownloadResponse> retrieveAllFiles(@PathVariable("productId") long id){
        String uploadDir = storageService.getUPLOAD_DIR();
-        storageService.getAllProductFilesInDirectory(uploadDir, id);
-        return null;
+       Product product = productRepository.findById(id).orElseThrow();
+       FileDownloadResponse response = storageService.getAllProductFilesInDirectory(uploadDir, product);
+        return ResponseEntity.ok().body(response);
     }
 }
